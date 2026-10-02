@@ -77,3 +77,18 @@ _, _ = client.RefundPoints(ctx, reservation.AccountTransactionID, octopusapp.Ref
 ```
 
 Reserve before work, capture the actual consumed amount after work succeeds, release unused reservations, and refund only after a captured transaction needs reversal. A timeout is not proof of failure; query the transaction before retrying with the same idempotency key.
+
+
+## Example
+
+Run the basic example without sending a request:
+
+```bash
+OCTOPUS_BASE_URL=https://octopus.example.com OCTOPUS_APP_KEY_ID=key_xxx OCTOPUS_APP_SECRET=secret_xxx go run ./examples/basic
+```
+
+Add `OCTOPUS_OPEN_TOKEN` only when handling a real application-open callback on your backend. The example never prints the app secret.
+
+## Local consumer verification
+
+Before publishing this module, local verification can use a temporary consumer with a `replace` directive pointing at this checkout. Published consumers should import `github.com/thecybersailor/octopus-app-sdk-go` without `replace`.
