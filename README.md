@@ -39,3 +39,41 @@ The SDK returns trusted platform context. Your application still owns local user
 ## Status
 
 Open session exchange is available. Point transaction methods are added in a later P07 task.
+
+## Point transaction lifecycle
+
+Applications send digital employee point amounts to Octopus. If your product has its own app points, apply your own conversion ratio before calling the SDK. Developer revenue share is an offline agreement and is not configured, calculated or displayed by this SDK or the platform API.
+
+```go
+reservation, err := client.ReservePoints(ctx, octopusapp.ReservePointsRequest{
+    AppTeamExternalID: "your-local-team-id",
+    OperationRef:      "job-123",
+    ReservePoints:     100,
+    IdempotencyKey:    "job-123:reserve",
+})
+if err != nil {
+    // Do not continue the billable operation until the reservation succeeds.
+}
+
+// If the result of a later call is unknown, query the original transaction
+// before retrying or releasing. Reuse the same operation and idempotency keys.
+current, err := client.GetPointTransaction(ctx, reservation.AccountTransactionID)
+_ = current
+
+captured, err := client.CapturePoints(ctx, reservation.AccountTransactionID, octopusapp.CapturePointsRequest{
+    CapturePoints:  80,
+    IdempotencyKey: "job-123:capture",
+})
+_ = captured
+
+_, _ = client.ReleasePoints(ctx, reservation.AccountTransactionID, octopusapp.ReleasePointsRequest{
+    IdempotencyKey: "job-123:release-unused",
+})
+
+_, _ = client.RefundPoints(ctx, reservation.AccountTransactionID, octopusapp.RefundPointsRequest{
+    RefundPoints:   30,
+    IdempotencyKey: "job-123:refund-1",
+})
+```
+
+Reserve before work, capture the actual consumed amount after work succeeds, release unused reservations, and refund only after a captured transaction needs reversal. A timeout is not proof of failure; query the transaction before retrying with the same idempotency key.

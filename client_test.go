@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -143,5 +144,107 @@ func TestExchangeOpenSessionRequiresOpenToken(t *testing.T) {
 	client := testClient(t, "https://octopus.example.com")
 	if _, err := client.ExchangeOpenSession(t.Context(), " "); err == nil {
 		t.Fatal("expected open token validation error")
+	}
+}
+
+func TestPointTransactionLifecyclePostsExpectedRequests(t *testing.T) {
+	requests := make([]string, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		requests = append(requests, r.URL.Path)
+		if body["keyId"] != "key_123" || body["secret"] != "secret_123" {
+			t.Fatalf("credentials missing from %s request: %+v", r.URL.Path, body)
+		}
+		switch r.URL.Path {
+		case "/api/v1/partner-apps/point-transactions/reserve":
+			if body["appTeamExternalId"] != "team_ext_1" || body["operationRef"] != "op_1" || body["idempotencyKey"] != "idem_reserve" || body["effectiveAt"] != "2026-10-03T00:00:00Z" || body["reservePoints"] != float64(100) {
+				t.Fatalf("unexpected reserve body: %+v", body)
+			}
+		case "/api/v1/partner-apps/point-transactions/apt_1/query":
+			// credentials only.
+		case "/api/v1/partner-apps/point-transactions/apt_1/capture":
+			if body["capturePoints"] != float64(80) || body["idempotencyKey"] != "idem_capture" {
+				t.Fatalf("unexpected capture body: %+v", body)
+			}
+		case "/api/v1/partner-apps/point-transactions/apt_1/release":
+			if body["idempotencyKey"] != "idem_release" {
+				t.Fatalf("unexpected release body: %+v", body)
+			}
+		case "/api/v1/partner-apps/point-transactions/apt_1/refund":
+			if body["refundPoints"] != float64(30) || body["idempotencyKey"] != "idem_refund" {
+				t.Fatalf("unexpected refund body: %+v", body)
+			}
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"transactionId":"tx_projection_1","tenantId":"tenant_1","partnerId":"partner_1","applicationId":"app_1","bindingId":"binding_1","teamId":"team_1","appTeamExternalId":"team_ext_1","operationRef":"op_1","accountTransactionId":"apt_1","status":"CAPTURED","reservedPoints":100,"capturedPoints":80,"refundedPoints":0,"createdAt":"2026-10-03T00:00:00Z","updatedAt":"2026-10-03T00:00:01Z"}}`))
+	}))
+	defer server.Close()
+
+	client := testClient(t, server.URL)
+	reserve, err := client.ReservePoints(t.Context(), ReservePointsRequest{AppTeamExternalID: "team_ext_1", OperationRef: "op_1", ReservePoints: 100, IdempotencyKey: "idem_reserve", EffectiveAt: "2026-10-03T00:00:00Z"})
+	if err != nil {
+		t.Fatalf("ReservePoints returned error: %v", err)
+	}
+	if reserve.AccountTransactionID != "apt_1" || reserve.CapturedPoints != 80 {
+		t.Fatalf("unexpected reserve transaction: %+v", reserve)
+	}
+	if _, err := client.GetPointTransaction(t.Context(), "apt_1"); err != nil {
+		t.Fatalf("GetPointTransaction returned error: %v", err)
+	}
+	if _, err := client.CapturePoints(t.Context(), "apt_1", CapturePointsRequest{CapturePoints: 80, IdempotencyKey: "idem_capture"}); err != nil {
+		t.Fatalf("CapturePoints returned error: %v", err)
+	}
+	if _, err := client.ReleasePoints(t.Context(), "apt_1", ReleasePointsRequest{IdempotencyKey: "idem_release"}); err != nil {
+		t.Fatalf("ReleasePoints returned error: %v", err)
+	}
+	if _, err := client.RefundPoints(t.Context(), "apt_1", RefundPointsRequest{RefundPoints: 30, IdempotencyKey: "idem_refund"}); err != nil {
+		t.Fatalf("RefundPoints returned error: %v", err)
+	}
+
+	expected := []string{
+		"/api/v1/partner-apps/point-transactions/reserve",
+		"/api/v1/partner-apps/point-transactions/apt_1/query",
+		"/api/v1/partner-apps/point-transactions/apt_1/capture",
+		"/api/v1/partner-apps/point-transactions/apt_1/release",
+		"/api/v1/partner-apps/point-transactions/apt_1/refund",
+	}
+	if !reflect.DeepEqual(requests, expected) {
+		t.Fatalf("unexpected request paths:\nwant %#v\n got %#v", expected, requests)
+	}
+}
+
+func TestPointTransactionValidation(t *testing.T) {
+	client := testClient(t, "https://octopus.example.com")
+	if _, err := client.ReservePoints(t.Context(), ReservePointsRequest{OperationRef: "op", ReservePoints: 1, IdempotencyKey: "idem"}); err == nil {
+		t.Fatal("ReservePoints should require app team external ID")
+	}
+	if _, err := client.ReservePoints(t.Context(), ReservePointsRequest{AppTeamExternalID: "team", ReservePoints: 1, IdempotencyKey: "idem"}); err == nil {
+		t.Fatal("ReservePoints should require operation ref")
+	}
+	if _, err := client.ReservePoints(t.Context(), ReservePointsRequest{AppTeamExternalID: "team", OperationRef: "op", ReservePoints: 0, IdempotencyKey: "idem"}); err == nil {
+		t.Fatal("ReservePoints should require positive points")
+	}
+	if _, err := client.ReservePoints(t.Context(), ReservePointsRequest{AppTeamExternalID: "team", OperationRef: "op", ReservePoints: 1}); err == nil {
+		t.Fatal("ReservePoints should require idempotency key")
+	}
+	if _, err := client.GetPointTransaction(t.Context(), " "); err == nil {
+		t.Fatal("GetPointTransaction should require account transaction ID")
+	}
+	if _, err := client.CapturePoints(t.Context(), "apt", CapturePointsRequest{CapturePoints: 0, IdempotencyKey: "idem"}); err == nil {
+		t.Fatal("CapturePoints should require positive points")
+	}
+	if _, err := client.CapturePoints(t.Context(), "apt", CapturePointsRequest{CapturePoints: 1}); err == nil {
+		t.Fatal("CapturePoints should require idempotency key")
+	}
+	if _, err := client.ReleasePoints(t.Context(), "apt", ReleasePointsRequest{}); err == nil {
+		t.Fatal("ReleasePoints should require idempotency key")
+	}
+	if _, err := client.RefundPoints(t.Context(), "apt", RefundPointsRequest{RefundPoints: 0, IdempotencyKey: "idem"}); err == nil {
+		t.Fatal("RefundPoints should require positive points")
 	}
 }

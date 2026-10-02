@@ -157,3 +157,180 @@ func (c *Client) ExchangeOpenSession(ctx context.Context, openToken string) (Ope
 	err := c.postJSON(ctx, openSessionExchangePath, exchangeOpenSessionRequest{KeyID: c.keyID, Secret: c.secret, OpenToken: openToken}, &out)
 	return out, err
 }
+
+const pointTransactionsBasePath = "/api/v1/partner-apps/point-transactions"
+
+// PointTransaction is the platform projection of an application point transaction.
+type PointTransaction struct {
+	TransactionID                string `json:"transactionId"`
+	TenantID                     string `json:"tenantId"`
+	PartnerID                    string `json:"partnerId"`
+	ApplicationID                string `json:"applicationId"`
+	BindingID                    string `json:"bindingId"`
+	TeamID                       string `json:"teamId"`
+	AppTeamExternalID            string `json:"appTeamExternalId"`
+	OperationRef                 string `json:"operationRef"`
+	AccountTransactionID         string `json:"accountTransactionId"`
+	OriginalAccountTransactionID string `json:"originalAccountTransactionId,omitempty"`
+	Status                       string `json:"status"`
+	ReservedPoints               int64  `json:"reservedPoints"`
+	CapturedPoints               int64  `json:"capturedPoints"`
+	RefundedPoints               int64  `json:"refundedPoints"`
+	CreatedAt                    Time   `json:"createdAt,omitempty"`
+	UpdatedAt                    Time   `json:"updatedAt,omitempty"`
+}
+
+// ReservePointsRequest starts a point reservation for an application operation.
+type ReservePointsRequest struct {
+	AppTeamExternalID string
+	OperationRef      string
+	ReservePoints     int64
+	IdempotencyKey    string
+	EffectiveAt       string
+}
+
+// CapturePointsRequest captures the actual consumed points from a reservation.
+type CapturePointsRequest struct {
+	CapturePoints  int64
+	IdempotencyKey string
+	EffectiveAt    string
+}
+
+// ReleasePointsRequest releases an unused reservation.
+type ReleasePointsRequest struct {
+	IdempotencyKey string
+	EffectiveAt    string
+}
+
+// RefundPointsRequest refunds points from a captured transaction.
+type RefundPointsRequest struct {
+	RefundPoints   int64
+	IdempotencyKey string
+	EffectiveAt    string
+}
+
+type reservePointsRequestJSON struct {
+	KeyID             string `json:"keyId"`
+	Secret            string `json:"secret"`
+	AppTeamExternalID string `json:"appTeamExternalId"`
+	OperationRef      string `json:"operationRef"`
+	ReservePoints     int64  `json:"reservePoints"`
+	IdempotencyKey    string `json:"idempotencyKey"`
+	EffectiveAt       string `json:"effectiveAt,omitempty"`
+}
+
+type pointTransactionCredentialRequest struct {
+	KeyID  string `json:"keyId"`
+	Secret string `json:"secret"`
+}
+
+type capturePointsRequestJSON struct {
+	KeyID          string `json:"keyId"`
+	Secret         string `json:"secret"`
+	CapturePoints  int64  `json:"capturePoints"`
+	IdempotencyKey string `json:"idempotencyKey"`
+	EffectiveAt    string `json:"effectiveAt,omitempty"`
+}
+
+type releasePointsRequestJSON struct {
+	KeyID          string `json:"keyId"`
+	Secret         string `json:"secret"`
+	IdempotencyKey string `json:"idempotencyKey"`
+	EffectiveAt    string `json:"effectiveAt,omitempty"`
+}
+
+type refundPointsRequestJSON struct {
+	KeyID          string `json:"keyId"`
+	Secret         string `json:"secret"`
+	RefundPoints   int64  `json:"refundPoints"`
+	IdempotencyKey string `json:"idempotencyKey"`
+	EffectiveAt    string `json:"effectiveAt,omitempty"`
+}
+
+// ReservePoints reserves digital employee points before the application performs work.
+func (c *Client) ReservePoints(ctx context.Context, req ReservePointsRequest) (PointTransaction, error) {
+	appTeamExternalID := strings.TrimSpace(req.AppTeamExternalID)
+	operationRef := strings.TrimSpace(req.OperationRef)
+	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
+	if appTeamExternalID == "" {
+		return PointTransaction{}, errors.New("octopus app sdk: app team external ID is required")
+	}
+	if operationRef == "" {
+		return PointTransaction{}, errors.New("octopus app sdk: operation ref is required")
+	}
+	if req.ReservePoints <= 0 {
+		return PointTransaction{}, errors.New("octopus app sdk: reserve points must be positive")
+	}
+	if idempotencyKey == "" {
+		return PointTransaction{}, errors.New("octopus app sdk: idempotency key is required")
+	}
+	var out PointTransaction
+	err := c.postJSON(ctx, pointTransactionsBasePath+"/reserve", reservePointsRequestJSON{KeyID: c.keyID, Secret: c.secret, AppTeamExternalID: appTeamExternalID, OperationRef: operationRef, ReservePoints: req.ReservePoints, IdempotencyKey: idempotencyKey, EffectiveAt: strings.TrimSpace(req.EffectiveAt)}, &out)
+	return out, err
+}
+
+// GetPointTransaction queries a previous point transaction by Account transaction ID.
+func (c *Client) GetPointTransaction(ctx context.Context, accountTransactionID string) (PointTransaction, error) {
+	accountTransactionID = strings.TrimSpace(accountTransactionID)
+	if accountTransactionID == "" {
+		return PointTransaction{}, errors.New("octopus app sdk: account transaction ID is required")
+	}
+	var out PointTransaction
+	err := c.postJSON(ctx, pointTransactionPath(accountTransactionID, "query"), pointTransactionCredentialRequest{KeyID: c.keyID, Secret: c.secret}, &out)
+	return out, err
+}
+
+// CapturePoints captures actual consumed points from a reserved transaction.
+func (c *Client) CapturePoints(ctx context.Context, accountTransactionID string, req CapturePointsRequest) (PointTransaction, error) {
+	accountTransactionID = strings.TrimSpace(accountTransactionID)
+	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
+	if accountTransactionID == "" {
+		return PointTransaction{}, errors.New("octopus app sdk: account transaction ID is required")
+	}
+	if req.CapturePoints <= 0 {
+		return PointTransaction{}, errors.New("octopus app sdk: capture points must be positive")
+	}
+	if idempotencyKey == "" {
+		return PointTransaction{}, errors.New("octopus app sdk: idempotency key is required")
+	}
+	var out PointTransaction
+	err := c.postJSON(ctx, pointTransactionPath(accountTransactionID, "capture"), capturePointsRequestJSON{KeyID: c.keyID, Secret: c.secret, CapturePoints: req.CapturePoints, IdempotencyKey: idempotencyKey, EffectiveAt: strings.TrimSpace(req.EffectiveAt)}, &out)
+	return out, err
+}
+
+// ReleasePoints releases an unused reserved transaction.
+func (c *Client) ReleasePoints(ctx context.Context, accountTransactionID string, req ReleasePointsRequest) (PointTransaction, error) {
+	accountTransactionID = strings.TrimSpace(accountTransactionID)
+	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
+	if accountTransactionID == "" {
+		return PointTransaction{}, errors.New("octopus app sdk: account transaction ID is required")
+	}
+	if idempotencyKey == "" {
+		return PointTransaction{}, errors.New("octopus app sdk: idempotency key is required")
+	}
+	var out PointTransaction
+	err := c.postJSON(ctx, pointTransactionPath(accountTransactionID, "release"), releasePointsRequestJSON{KeyID: c.keyID, Secret: c.secret, IdempotencyKey: idempotencyKey, EffectiveAt: strings.TrimSpace(req.EffectiveAt)}, &out)
+	return out, err
+}
+
+// RefundPoints refunds captured points from a transaction.
+func (c *Client) RefundPoints(ctx context.Context, accountTransactionID string, req RefundPointsRequest) (PointTransaction, error) {
+	accountTransactionID = strings.TrimSpace(accountTransactionID)
+	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
+	if accountTransactionID == "" {
+		return PointTransaction{}, errors.New("octopus app sdk: account transaction ID is required")
+	}
+	if req.RefundPoints <= 0 {
+		return PointTransaction{}, errors.New("octopus app sdk: refund points must be positive")
+	}
+	if idempotencyKey == "" {
+		return PointTransaction{}, errors.New("octopus app sdk: idempotency key is required")
+	}
+	var out PointTransaction
+	err := c.postJSON(ctx, pointTransactionPath(accountTransactionID, "refund"), refundPointsRequestJSON{KeyID: c.keyID, Secret: c.secret, RefundPoints: req.RefundPoints, IdempotencyKey: idempotencyKey, EffectiveAt: strings.TrimSpace(req.EffectiveAt)}, &out)
+	return out, err
+}
+
+func pointTransactionPath(accountTransactionID string, action string) string {
+	return pointTransactionsBasePath + "/" + accountTransactionID + "/" + action
+}
