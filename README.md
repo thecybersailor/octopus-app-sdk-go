@@ -38,7 +38,7 @@ The SDK returns trusted platform context. Your application still owns local user
 
 ## Status
 
-Open session exchange is available. Point transaction methods are added in a later P07 task.
+Open session exchange and point transaction lifecycle methods are available in this local development version.
 
 ## Point transaction lifecycle
 
@@ -77,7 +77,6 @@ _, _ = client.RefundPoints(ctx, reservation.AccountTransactionID, octopusapp.Ref
 ```
 
 Reserve before work, capture the actual consumed amount after work succeeds, release unused reservations, and refund only after a captured transaction needs reversal. A timeout is not proof of failure; query the transaction before retrying with the same idempotency key.
-
 
 ## Example
 
