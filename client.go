@@ -8,7 +8,11 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
+
+// Time aliases time.Time for SDK response fields.
+type Time = time.Time
 
 // ClientConfig configures an Octopus partner application client.
 type ClientConfig struct {
@@ -120,4 +124,36 @@ func (c *Client) postJSON(ctx context.Context, path string, request any, respons
 		return fmt.Errorf("octopus app sdk: decode %s data: %w", path, err)
 	}
 	return nil
+}
+
+const openSessionExchangePath = "/api/v1/partner-apps/open-sessions/exchange"
+
+type exchangeOpenSessionRequest struct {
+	KeyID     string `json:"keyId"`
+	Secret    string `json:"secret"`
+	OpenToken string `json:"openToken"`
+}
+
+// OpenSessionContext is the trusted context returned after exchanging an open token.
+type OpenSessionContext struct {
+	TenantID          string `json:"tenantId"`
+	PartnerID         string `json:"partnerId"`
+	ApplicationID     string `json:"applicationId"`
+	BindingID         string `json:"bindingId"`
+	TeamID            string `json:"teamId"`
+	UserID            string `json:"userId"`
+	TeamRole          string `json:"teamRole"`
+	AppTeamExternalID string `json:"appTeamExternalId"`
+	ExpiresAt         Time   `json:"expiresAt"`
+}
+
+// ExchangeOpenSession exchanges a one-time open token for trusted application context.
+func (c *Client) ExchangeOpenSession(ctx context.Context, openToken string) (OpenSessionContext, error) {
+	openToken = strings.TrimSpace(openToken)
+	if openToken == "" {
+		return OpenSessionContext{}, errors.New("octopus app sdk: open token is required")
+	}
+	var out OpenSessionContext
+	err := c.postJSON(ctx, openSessionExchangePath, exchangeOpenSessionRequest{KeyID: c.keyID, Secret: c.secret, OpenToken: openToken}, &out)
+	return out, err
 }

@@ -1,6 +1,7 @@
 package octopusapp
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -106,4 +107,41 @@ func testClient(t *testing.T, baseURL string) *Client {
 		t.Fatalf("NewClient returned error: %v", err)
 	}
 	return client
+}
+
+func TestExchangeOpenSessionPostsCredentialsAndDecodesContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/partner-apps/open-sessions/exchange" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if body["keyId"] != "key_123" || body["secret"] != "secret_123" || body["openToken"] != "open_token_1" {
+			t.Fatalf("unexpected request body: %+v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"tenantId":"tenant_1","partnerId":"partner_1","applicationId":"app_1","bindingId":"binding_1","teamId":"team_1","userId":"user_1","teamRole":"admin","appTeamExternalId":"laoma_team_1","expiresAt":"2026-10-03T00:00:00Z"}}`))
+	}))
+	defer server.Close()
+
+	client := testClient(t, server.URL)
+	ctx, err := client.ExchangeOpenSession(t.Context(), " open_token_1 ")
+	if err != nil {
+		t.Fatalf("ExchangeOpenSession returned error: %v", err)
+	}
+	if ctx.TenantID != "tenant_1" || ctx.TeamRole != "admin" || ctx.AppTeamExternalID != "laoma_team_1" {
+		t.Fatalf("unexpected context: %+v", ctx)
+	}
+	if ctx.ExpiresAt.IsZero() {
+		t.Fatalf("expiresAt should decode")
+	}
+}
+
+func TestExchangeOpenSessionRequiresOpenToken(t *testing.T) {
+	client := testClient(t, "https://octopus.example.com")
+	if _, err := client.ExchangeOpenSession(t.Context(), " "); err == nil {
+		t.Fatal("expected open token validation error")
+	}
 }
