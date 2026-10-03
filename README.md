@@ -30,8 +30,10 @@ if err != nil {
     // Return a business-facing retry or expired-link message.
 }
 
-// Use ctx.UserID, ctx.TeamID, ctx.TeamRole and ctx.AppTeamExternalID
-// to find or create your local user/member records, then issue your own app session.
+// Resolve an independent local identity using the fixed provider,
+// ctx.IdentityTenantID and ctx.UserID (never native phone/email matching).
+// Then ensure membership using ctx.TeamID, ctx.TeamRole and ctx.AppTeamExternalID.
+// Issue a session for the local identity ID, not the platform UserID.
 ```
 
 The SDK returns trusted platform context. Your application still owns local user records, team/member records, business permissions and session issuance.
@@ -91,3 +93,9 @@ Add `OCTOPUS_OPEN_TOKEN` only when handling a real application-open callback on 
 ## Local consumer verification
 
 Before publishing this module, local verification can use a temporary consumer with a `replace` directive pointing at this checkout. Published consumers should import `github.com/thecybersailor/octopus-app-sdk-go` without `replace`.
+
+## Identity isolation and first access
+
+First creation of a digital employee identity must start from the Octopus application entry and a server-validated one-time open token. Website QR login may only resolve an already provisioned identity. Keep native phone accounts separate even when phone numbers match; never use phone/email to reuse a native user, or pass the platform user ID as a local account ID.
+
+Use the authenticated identity tenant, distinct from the application ownership tenant, together with provider, subject and local instance as the stable identity key. Reuse that independent identity across apps; ensure membership separately for each valid binding. Existing native team hosting requires verified ownership and explicit admin selection, and never merges account identities or rewrites historical authors. Reject missing identity context and never fall back to native login, default teams or billing.

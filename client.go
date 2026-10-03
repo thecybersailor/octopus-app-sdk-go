@@ -136,6 +136,7 @@ type exchangeOpenSessionRequest struct {
 
 // OpenSessionContext is the trusted context returned after exchanging an open token.
 type OpenSessionContext struct {
+	IdentityTenantID  string `json:"identityTenantId"`
 	TenantID          string `json:"tenantId"`
 	PartnerID         string `json:"partnerId"`
 	ApplicationID     string `json:"applicationId"`
@@ -155,7 +156,13 @@ func (c *Client) ExchangeOpenSession(ctx context.Context, openToken string) (Ope
 	}
 	var out OpenSessionContext
 	err := c.postJSON(ctx, openSessionExchangePath, exchangeOpenSessionRequest{KeyID: c.keyID, Secret: c.secret, OpenToken: openToken}, &out)
-	return out, err
+	if err != nil {
+		return OpenSessionContext{}, err
+	}
+	if strings.TrimSpace(out.IdentityTenantID) == "" || strings.TrimSpace(out.UserID) == "" {
+		return OpenSessionContext{}, errors.New("octopus app sdk: open session is missing identity context; reopen the application after updating the provider")
+	}
+	return out, nil
 }
 
 const pointTransactionsBasePath = "/api/v1/partner-apps/point-transactions"

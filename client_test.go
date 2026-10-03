@@ -123,12 +123,15 @@ func TestExchangeOpenSessionPostsCredentialsAndDecodesContext(t *testing.T) {
 			t.Fatalf("unexpected request body: %+v", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":{"tenantId":"tenant_1","partnerId":"partner_1","applicationId":"app_1","bindingId":"binding_1","teamId":"team_1","userId":"user_1","teamRole":"admin","appTeamExternalId":"laoma_team_1","expiresAt":"2026-10-03T00:00:00Z"}}`))
+		_, _ = w.Write([]byte(`{"data":{"identityTenantId":"identity_main","tenantId":"tenant_1","partnerId":"partner_1","applicationId":"app_1","bindingId":"binding_1","teamId":"team_1","userId":"user_1","teamRole":"admin","appTeamExternalId":"laoma_team_1","expiresAt":"2026-10-03T00:00:00Z"}}`))
 	}))
 	defer server.Close()
 
 	client := testClient(t, server.URL)
 	ctx, err := client.ExchangeOpenSession(t.Context(), " open_token_1 ")
+	if ctx.IdentityTenantID != "identity_main" {
+		t.Fatalf("identity tenant must not use application tenant: %+v", ctx)
+	}
 	if err != nil {
 		t.Fatalf("ExchangeOpenSession returned error: %v", err)
 	}
@@ -246,5 +249,16 @@ func TestPointTransactionValidation(t *testing.T) {
 	}
 	if _, err := client.RefundPoints(t.Context(), "apt", RefundPointsRequest{RefundPoints: 0, IdempotencyKey: "idem"}); err == nil {
 		t.Fatal("RefundPoints should require positive points")
+	}
+}
+
+func TestExchangeOpenSessionRejectsMissingIdentityTenant(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"tenantId":"application-tenant","userId":"user"}}`))
+	}))
+	defer server.Close()
+	_, err := testClient(t, server.URL).ExchangeOpenSession(t.Context(), "token")
+	if err == nil {
+		t.Fatal("application tenant must never substitute identity tenant")
 	}
 }
