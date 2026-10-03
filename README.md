@@ -7,7 +7,7 @@ This package is intentionally independent from BotWorks source code. It uses the
 ## Install
 
 ```bash
-go get github.com/thecybersailor/octopus-app-sdk-go
+go get github.com/thecybersailor/octopus-app-sdk-go@v0.3.0
 ```
 
 ## Create a client
@@ -40,7 +40,7 @@ The SDK returns trusted platform context. Your application still owns local user
 
 ## Status
 
-Open session exchange and point transaction lifecycle methods are available in this local development version.
+v0.3.0 includes open-session exchange, point transaction lifecycle methods, and per-cooperation runtime API/MCP access verification. Runtime access requires a platform deployment implementing `/api/v1/partner-apps/access/verify`; publishing the SDK does not deploy that endpoint.
 
 ## Point transaction lifecycle
 
@@ -99,3 +99,67 @@ Before publishing this module, local verification can use a temporary consumer w
 First creation of a digital employee identity must start from the Octopus application entry and a server-validated one-time open token. Website QR login may only resolve an already provisioned identity. Keep native phone accounts separate even when phone numbers match; never use phone/email to reuse a native user, or pass the platform user ID as a local account ID.
 
 Use the authenticated identity tenant, distinct from the application ownership tenant, together with provider, subject and local instance as the stable identity key. Reuse that independent identity across apps; ensure membership separately for each valid binding. Existing native team hosting requires verified ownership and explicit admin selection, and never merges account identities or rewrites historical authors. Reject missing identity context and never fall back to native login, default teams or billing.
+
+## Market cooperation and automatic API/MCP access
+
+An application has no application-version hierarchy. Each application × market
+cooperation owns its own code, connection settings, platform key and consumption
+bill. Create one `Client` per cooperation. Select it by an explicit configured
+cooperation ID; never try other keys if verification fails.
+
+`VerifyAccess` (available from v0.3.0) verifies a short-lived platform
+execution token. Unlike `ExchangeOpenSession`, it does not create a browser login.
+
+```go
+access, err := client.VerifyAccess(request.Context(), bearerToken)
+if err != nil {
+    // Deny the request. Do not fall back to native or another market's identity.
+    return
+}
+if access.CooperationID != configuredCooperationID ||
+    access.MarketID != configuredMarketID || !access.AllowsMCPMethod(method) {
+    return
+}
+// Resolve your immutable local binding using access.BindingID, access.TeamID,
+// and access.AppTeamExternalID. Scope every query to that team.
+// access.DigiEmployeeID is an execution principal, not a human administrator.
+```
+
+Verify each incoming request. The platform checks current cooperation, binding,
+registration, employee and credential state. Discovery/probe credentials cannot
+execute business operations. `AllowsMCPMethod` permits initialization and the
+metadata lookup required by the authorized operation; it does not allow a token
+for `tools/call` to perform `resources/read`.
+
+## Idempotent team provisioning
+
+Register an HTTPS provisioning URL in the cooperation's connection settings. The
+platform posts this body using the application-provided service Bearer secret:
+
+```json
+{
+  "cooperationId": "papp_example",
+  "marketId": "market_example",
+  "bindingId": "papp_binding_example",
+  "teamId": "team_example",
+  "teamName": "Example team"
+}
+```
+
+Authenticate the service secret and compare cooperation/market with the selected
+configuration before changing data. Lock a persistent operation unique on
+`(cooperationId, teamId)`, retain `bindingId`, create the local team and immutable
+binding in one transaction, and return the same result for retries:
+
+```json
+{"data":{"bindingId":"papp_binding_example","appTeamExternalId":"local_team","appTeamName":"Example team"}}
+```
+
+No human account is created here. Ensure users on the existing verified open-session
+path. A different binding ID for the same cooperation/team must fail. If the
+platform sends `existingAppTeamExternalId`, verify an explicitly mapped local
+binding; never use that field to claim an unbound native team or match by phone.
+
+Runtime API/MCP tokens and one-time login tokens have no user-managed settings.
+Application-to-digital-employee point conversion remains an application configuration;
+developer revenue sharing stays outside the platform consumption bill.
