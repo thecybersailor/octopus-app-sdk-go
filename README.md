@@ -7,7 +7,7 @@ This package is intentionally independent from BotWorks source code. It uses the
 ## Install
 
 ```bash
-go get github.com/thecybersailor/octopus-app-sdk-go@v0.3.0
+go get github.com/thecybersailor/octopus-app-sdk-go@v0.4.0
 ```
 
 ## Create a client
@@ -36,11 +36,24 @@ if err != nil {
 // Issue a session for the local identity ID, not the platform UserID.
 ```
 
+`ctx.ArcubaseUserID` (available from v0.4.0) identifies the human employee who
+opened the application within `ctx.TeamID`. It is a numeric string: store and
+compare it as a string, never as a number. Use `(TeamID, ArcubaseUserID)` for
+employee associations and `(IdentityTenantID, UserID)` for platform account
+mapping. The launch URL hint `octopus_arcubase_user_id` can be edited by the
+browser; trust only the exchanged value.
+
+The exchange fails when the employee identity is missing. Platforms reject the
+open request with `ARCUBASE_USER_BINDING_REQUIRED` when the member has no ready
+employee binding, and reject old tokens without an employee snapshot with
+`INVALID_REQUEST`. In both cases, ask the user to reopen the application from
+the team app list after the team administrator enables employee access.
+
 The SDK returns trusted platform context. Your application still owns local user records, team/member records, business permissions and session issuance.
 
 ## Status
 
-v0.3.0 includes open-session exchange, point transaction lifecycle methods, and per-cooperation runtime API/MCP access verification. Runtime access requires a platform deployment implementing `/api/v1/partner-apps/access/verify`; publishing the SDK does not deploy that endpoint.
+v0.4.0 includes open-session exchange with the human employee identity (`arcubaseUserId`), point transaction lifecycle methods, and per-cooperation runtime API/MCP access verification. Runtime access requires a platform deployment implementing `/api/v1/partner-apps/access/verify`, and the employee identity requires a platform deployment that returns `arcubaseUserId` from open-session exchange; publishing the SDK does not deploy either.
 
 ## Point transaction lifecycle
 

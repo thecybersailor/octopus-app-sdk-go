@@ -123,12 +123,15 @@ func TestExchangeOpenSessionPostsCredentialsAndDecodesContext(t *testing.T) {
 			t.Fatalf("unexpected request body: %+v", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":{"identityTenantId":"identity_main","tenantId":"tenant_1","partnerId":"partner_1","applicationId":"app_1","bindingId":"binding_1","teamId":"team_1","userId":"user_1","teamRole":"admin","appTeamExternalId":"laoma_team_1","expiresAt":"2026-10-03T00:00:00Z"}}`))
+		_, _ = w.Write([]byte(`{"data":{"identityTenantId":"identity_main","tenantId":"tenant_1","partnerId":"partner_1","applicationId":"app_1","bindingId":"binding_1","teamId":"team_1","userId":"user_1","arcubaseUserId":"90071992547409931234","teamRole":"admin","appTeamExternalId":"laoma_team_1","expiresAt":"2026-10-03T00:00:00Z"}}`))
 	}))
 	defer server.Close()
 
 	client := testClient(t, server.URL)
 	ctx, err := client.ExchangeOpenSession(t.Context(), " open_token_1 ")
+	if ctx.ArcubaseUserID != "90071992547409931234" {
+		t.Fatalf("employee identity must be decoded as an exact string: %+v", ctx)
+	}
 	if ctx.IdentityTenantID != "identity_main" {
 		t.Fatalf("identity tenant must not use application tenant: %+v", ctx)
 	}
@@ -260,5 +263,16 @@ func TestExchangeOpenSessionRejectsMissingIdentityTenant(t *testing.T) {
 	_, err := testClient(t, server.URL).ExchangeOpenSession(t.Context(), "token")
 	if err == nil {
 		t.Fatal("application tenant must never substitute identity tenant")
+	}
+}
+
+func TestExchangeOpenSessionRejectsMissingEmployeeIdentity(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"identityTenantId":"identity_main","tenantId":"application-tenant","userId":"user","teamId":"team_1"}}`))
+	}))
+	defer server.Close()
+	_, err := testClient(t, server.URL).ExchangeOpenSession(t.Context(), "token")
+	if err == nil || !strings.Contains(err.Error(), "arcubaseUserId") {
+		t.Fatalf("missing employee identity must fail with actionable error, got %v", err)
 	}
 }

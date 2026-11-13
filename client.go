@@ -136,13 +136,17 @@ type exchangeOpenSessionRequest struct {
 
 // OpenSessionContext is the trusted context returned after exchanging an open token.
 type OpenSessionContext struct {
-	IdentityTenantID  string `json:"identityTenantId"`
-	TenantID          string `json:"tenantId"`
-	PartnerID         string `json:"partnerId"`
-	ApplicationID     string `json:"applicationId"`
-	BindingID         string `json:"bindingId"`
-	TeamID            string `json:"teamId"`
-	UserID            string `json:"userId"`
+	IdentityTenantID string `json:"identityTenantId"`
+	TenantID         string `json:"tenantId"`
+	PartnerID        string `json:"partnerId"`
+	ApplicationID    string `json:"applicationId"`
+	BindingID        string `json:"bindingId"`
+	TeamID           string `json:"teamId"`
+	UserID           string `json:"userId"`
+	// ArcubaseUserID identifies the human employee within TeamID. It is a numeric
+	// string; store and compare it as a string. Use (TeamID, ArcubaseUserID) for
+	// employee associations and (IdentityTenantID, UserID) for platform accounts.
+	ArcubaseUserID    string `json:"arcubaseUserId"`
 	TeamRole          string `json:"teamRole"`
 	AppTeamExternalID string `json:"appTeamExternalId"`
 	ExpiresAt         Time   `json:"expiresAt"`
@@ -161,6 +165,9 @@ func (c *Client) ExchangeOpenSession(ctx context.Context, openToken string) (Ope
 	}
 	if strings.TrimSpace(out.IdentityTenantID) == "" || strings.TrimSpace(out.UserID) == "" {
 		return OpenSessionContext{}, errors.New("octopus app sdk: open session is missing identity context; reopen the application after updating the provider")
+	}
+	if strings.TrimSpace(out.ArcubaseUserID) == "" {
+		return OpenSessionContext{}, errors.New("octopus app sdk: open session is missing employee identity (arcubaseUserId); reopen the application from the team app list")
 	}
 	return out, nil
 }

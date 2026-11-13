@@ -33,5 +33,5 @@ func main() {
 		fmt.Fprintf(os.Stderr, "exchange open session: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Open session exchanged for team %s, app team %s, user %s, role %s\n", ctx.TeamID, ctx.AppTeamExternalID, ctx.UserID, ctx.TeamRole)
+	fmt.Printf("Open session exchanged for team %s, app team %s, user %s, employee %s, role %s\n", ctx.TeamID, ctx.AppTeamExternalID, ctx.UserID, ctx.ArcubaseUserID, ctx.TeamRole)
 }
